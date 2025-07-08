@@ -99,7 +99,9 @@ jobs:
         context: .
         platforms: linux/amd64,linux/arm64,linux/arm/v7
         push: true
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+        tags: |
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}
+          ${{ startsWith(github.ref, 'refs/tags/') && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE_NAME) || '' }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
