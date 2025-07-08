@@ -1,9 +1,9 @@
 # Xray Exporter
 
 [![Go Report Card](https://goreportcard.com/badge/github.com/compassvpn/xray-exporter)][goreportcard]
-[![Build Status](https://app.travis-ci.com/compassvpn/xray-exporter.svg?branch=master)][build-status]
+[![Build Status](https://github.com/compassvpn/xray-exporter/actions/workflows/ci.yml/badge.svg?branch=main)][build-status]
 
-An exporter that collect Xray (and V2Ray) metrics over its [Stats API][stats-api] and export them to Prometheus.
+An exporter that collects Xray (and V2Ray) metrics over its [Stats API][stats-api] and exports them to Prometheus.
 
 - [Xray Exporter](#xray-exporter)
   - [Quick Start](#quick-start)
@@ -17,34 +17,34 @@ An exporter that collect Xray (and V2Ray) metrics over its [Stats API][stats-api
 
 [stats-api]: https://xtls.github.io/en/config/stats.html
 [goreportcard]: https://goreportcard.com/report/github.com/compassvpn/xray-exporter
-[build-status]: https://app.travis-ci.com/github/compassvpn/xray-exporter
+[build-status]: https://github.com/compassvpn/xray-exporter/actions/workflows/ci.yml
 
 ## Quick Start
 
 ### Binaries
 
-The latest binaries are made available on GitHub releases page:
+The latest binaries are made available on the GitHub releases page:
 
 ### Docker
 
-You can also find the docker images built automatically by CI from [Docker Hub](https://hub.docker.com/r/compassvpn/xray-exporter). The images are made for multi-arch. You can run it from your Raspberry Pi or any other ARM, ARM64 devices without changing the image name:
+You can also find the Docker images built automatically by CI from [Docker Hub](https://hub.docker.com/r/compassvpn/xray-exporter). The images are made for multi-arch. You can run it from your Raspberry Pi or any other ARM, ARM64 devices without changing the image name:
 
 ```bash
-# Use specific tag instead of latest for production
+# Use a specific tag instead of the latest for production
 docker run --rm -it --read-only compassvpn/xray-exporter:<TAG>
 ```
 
-Please note that `latest` tag is not available. Use `master` instead if you want the latest build of master branch.
+Please note that the `latest` tag is not available. Use `main` instead if you want the latest build of the main branch.
 
 ### Grafana Dashboard
 
-A simple Grafana dashboard is also available [here](soon). Please refer to the Grafana docs to get the steps of importing dashboards from JSON files.
+A simple Grafana dashboard is also available [here](soon). Please refer to the Grafana docs to get the steps for importing dashboards from JSON files.
 
 ## Tutorial
 
 Before we start, let's assume you have already set up Prometheus and Grafana.
 
-Firstly, you will need to make sure the API and statistics related features have been enabled in your Xray _(or V2Ray)_ config file. For example:
+Firstly, you will need to make sure the API and statistics-related features have been enabled in your Xray _(or V2Ray)_ config file. For example:
 
 ```json
 {
@@ -123,13 +123,13 @@ The next step is to start the exporter:
 ```bash
 xray-exporter --xray-endpoint "127.0.0.1:54321"
 ## Or with Docker
-docker run --rm -d --read-only compassvpn/xray-exporter:master --xray-endpoint "127.0.0.1:54321"
+docker run --rm -d --read-only ghcr.io/{username}/xray-exporter:main --xray-endpoint "127.0.0.1:54321"
 ```
 
 The logs signifies that the exporter started to listening on the default address (`:9550`).
 
 ```plain
-Xray Exporter master-a1b2c3d (built 2025-01-15T10:30:45Z)
+Xray Exporter main-a1b2c3d (built 2025-01-15T10:30:45Z)
 time="2025-01-15T10:30:45Z" level=info msg="Server is ready to handle incoming scrape requests."
 ```
 
