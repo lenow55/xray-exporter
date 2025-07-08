@@ -2,41 +2,69 @@
 
 An exporter that collects Xray (and V2Ray) metrics over its [Stats API][stats-api] and exports them to Prometheus.
 
-- [Xray Exporter](#xray-exporter)
-  - [Quick Start](#quick-start)
-    - [Binaries](#binaries)
-    - [Docker](#docker-recommended)
-  - [Tutorial](#tutorial)
-  - [Grafana Dashboard](#grafana-dashboard)
-  - [Digging Deeper](#digging-deeper)
-  - [Special Thanks](#special-thanks)
+
+- [Quick Start](#quick-start)
+  - [Binaries](#binaries)
+  - [Docker](#docker-recommended)
+- [Command Line Options](#command-line-options)
+- [Tutorial](#tutorial)
+- [Grafana Dashboard](#grafana-dashboard)
+- [Available Metrics](#available-metrics)
+- [Special Thanks](#special-thanks)
 
 ## Quick Start
 
 ### Binaries
 
-The latest binaries are made available on the GitHub releases page:
+The latest binaries are made available on the [GitHub Releases Page](https://github.com/compassvpn/xray-exporter/releases/latest).
 
 ### Docker
 
-You can also find the Docker images built automatically by CI from [GitHub Container Registry](https://github.com/compassvpn/xray-exporter/pkgs/container/xray-exporter). The images are made for multi-arch. You can run it from your Raspberry Pi or any other ARM, ARM64 devices without changing the image name:
+You can also find the Docker images built automatically by CI from [GitHub Container Registry](https://github.com/compassvpn/xray-exporter/pkgs/container/xray-exporter). The images are made for multi-arch.
 
 ```bash
-# Use a specific tag instead of the latest for production
-docker run --rm -it --read-only ghcr.io/compassvpn/xray-exporter:<TAG>
+docker run --rm -it --read-only ghcr.io/compassvpn/xray-exporter:latest
 ```
 
-Please note that the `latest` tag is not available. Use `main` instead if you want the latest build of the main branch.
+Available tags:
+- main _(Latest commit: may not be stable)_
+- latest _(Recommended: Points to latest stable build)_
+- 0.0.1 _(And any version number)_
 
 ### Grafana Dashboard
 
 A simple Grafana dashboard is also available [here](soon). Please refer to the Grafana docs to get the steps for importing dashboards from JSON files.
 
+## Command Line Options
+
+You can view all available command line options by running:
+
+```bash
+xray-exporter -h
+```
+
+Available options:
+
+```
+Usage:
+  xray-exporter [OPTIONS]
+
+Application Options:
+  -l, --listen [ADDR]:PORT          Listen address (default: :9550)
+  -m, --metrics-path PATH           Metrics path (default: /scrape)
+  -e, --xray-endpoint HOST:PORT     Xray API endpoint (default: 127.0.0.1:8080)
+  -t, --scrape-timeout N            The timeout in seconds for every individual scrape (default: 3)
+      --version                     Display the version and exit
+
+Help Options:
+  -h, --help                        Show this help message
+```
+
 ## Tutorial
 
 Before we start, let's assume you have already set up Prometheus and Grafana.
 
-Firstly, you will need to make sure the API and statistics-related features have been enabled in your Xray _(or V2Ray)_ config file. For example:
+First, you need to make sure the API and statistics-related features have been enabled in your Xray _(or V2Ray)_ config file. For example:
 
 ```json
 {
@@ -115,17 +143,17 @@ The next step is to start the exporter:
 ```bash
 xray-exporter --xray-endpoint "127.0.0.1:54321"
 ## Or with Docker
-docker run --rm -d --read-only ghcr.io/compassvpn/xray-exporter:main --xray-endpoint "127.0.0.1:54321"
+docker run --rm -d --read-only ghcr.io/compassvpn/xray-exporter:latest --xray-endpoint "127.0.0.1:54321"
 ```
 
 The logs signify that the exporter started to listen on the default address (`:9550`).
 
 ```plain
-Xray Exporter main-a1b2c3d (built 2025-01-15T10:30:45Z)
+Xray Exporter XXX-a1b2c3d (built 2025-01-01T21:00:00Z)
 time="2025-01-15T10:30:45Z" level=info msg="Server is ready to handle incoming scrape requests."
 ```
 
-Use `--listen` option if you'd like to change the listen address or port. You can now open `http://IP:9550` in your browser:
+Use `--listen` option if you'd like to change the listen address or port. You can open `http://ip:9550` in your browser:
 
 Click the `Scrape Xray Metrics` and the exporter will expose all metrics, including Xray/V2Ray runtime and statistics data in the Prometheus metrics format, for example:
 
@@ -158,7 +186,7 @@ scrape_configs:
 
 To learn more about Prometheus, please visit the [official docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/).
 
-## Digging Deeper
+## Available Metrics
 
 For users who do not care about the internal changes, but only need a mapping table, here it is:
 
@@ -183,7 +211,6 @@ For users who do not care about the internal changes, but only need a mapping ta
 | `user>>>user-email>>traffic>>>uplink`     | `xray_traffic_uplink_bytes_total{dimension="user",target="user-email"}`    |
 | `user>>>user-email>>>traffic>>>downlink`  | `xray_traffic_downlink_bytes_total{dimension="user",target="user-email"}`  |
 | ...                                       | ...                                                                         |
-
 
 ## Special Thanks
 
