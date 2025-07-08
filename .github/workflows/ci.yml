@@ -1,4 +1,4 @@
-name: Build, Release, and Deploy
+name: Build-Release-Deploy
 
 on:
   push:
@@ -54,7 +54,7 @@ jobs:
         
         # Build binary
         mkdir -p dist
-        BINARY="xray-exporter_${{ matrix.goos }}_${{ matrix.goarch }}"
+        BINARY="xray-exporter-${{ matrix.goos }}-${{ matrix.goarch }}"
         [ "${{ matrix.goos }}" = "windows" ] && BINARY="${BINARY}.exe"
         
         go build -ldflags="-s -w -X main.buildCommit=${{ github.sha }} -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X main.buildVersion=${VERSION}" -o "dist/${BINARY}" .
@@ -62,7 +62,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+        name: xray-exporter-${{ matrix.goos }}-${{ matrix.goarch }}
         path: dist/
         retention-days: 7
 
@@ -82,7 +82,7 @@ jobs:
     - name: Download artifacts
       uses: actions/download-artifact@v4
       with:
-        name: binary-linux-${{ matrix.arch }}
+        name: xray-exporter-linux-${{ matrix.arch }}
         path: dist/
         
     - name: Set up Docker Buildx
@@ -125,13 +125,21 @@ jobs:
       run: |
         TAG="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}"
         
+        # Remove any existing manifest to avoid conflicts
+        docker manifest rm ${TAG} 2>/dev/null || true
+        
+        # Create new manifest list
         docker manifest create ${TAG} \
           ${TAG}-amd64 \
           ${TAG}-arm64 \
           ${TAG}-arm
           
+        # Annotate architectures
+        docker manifest annotate ${TAG} ${TAG}-amd64 --os linux --arch amd64
         docker manifest annotate ${TAG} ${TAG}-arm64 --os linux --arch arm64
-        docker manifest annotate ${TAG} ${TAG}-arm --os linux --arch arm
+        docker manifest annotate ${TAG} ${TAG}-arm --os linux --arch arm --variant v7
+        
+        # Push manifest
         docker manifest push ${TAG}
 
   release:
@@ -145,7 +153,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         path: dist/
-        pattern: binary-*
+        pattern: xray-exporter-*
         merge-multiple: true
         
     - name: Create Release
