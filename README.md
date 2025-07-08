@@ -1,6 +1,6 @@
 # Xray Exporter
 
-An exporter that collects Xray (and V2Ray) metrics over its [Stats API][stats-api] and exports them to Prometheus.
+An exporter that collects Xray _(and V2Ray)_ metrics over its Stats API and exports them to Prometheus.
 
 
 - [Quick Start](#quick-start)
