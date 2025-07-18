@@ -19,9 +19,14 @@ import (
 
 // Cardinality limits to prevent excessive metric series
 const (
-	MaxTrackedDomains   = 100 // Keep only top 100 domains
-	MaxTrackedIPs       = 100 // Keep only top 100 IPs
-	MaxTrackedOutbounds = 10  // Keep only top 10 outbounds
+	MaxTrackedDomains   = 20 // Keep only top 20 domains for pie chart
+	MaxTrackedIPs       = 20 // Keep only top 20 IPs for pie chart
+	MaxTrackedOutbounds = 10 // Keep only top 10 outbounds
+
+	// Emergency cleanup thresholds to prevent unlimited growth
+	MaxDomainsBeforeCleanup   = 30 // Force cleanup if domains exceed this (small buffer)
+	MaxIPsBeforeCleanup       = 30 // Force cleanup if IPs exceed this (small buffer)
+	MaxOutboundsBeforeCleanup = 15 // Force cleanup if outbounds exceed this
 )
 
 // Represents a parsed line from the Xray access log.
@@ -102,36 +107,6 @@ func shouldSkipLine(line string) bool {
 	return false
 }
 
-// Extracts domain from "tcp:domain:port" or "udp:domain:port" format.
-func extractDomain(line string) string {
-	// Find "tcp:" pattern
-	if idx := strings.Index(line, "tcp:"); idx != -1 {
-		return extractDomainFromProto(line[idx+4:])
-	}
-	// Find "udp:" pattern
-	if idx := strings.Index(line, "udp:"); idx != -1 {
-		return extractDomainFromProto(line[idx+4:])
-	}
-	return ""
-}
-
-// Extracts domain from "domain:port" format.
-func extractDomainFromProto(protoSection string) string {
-	// Find the port separator (last colon before space or bracket)
-	spaceIdx := strings.Index(protoSection, " ")
-	if spaceIdx == -1 {
-		return ""
-	}
-
-	domainPort := protoSection[:spaceIdx]
-	colonIdx := strings.LastIndex(domainPort, ":")
-	if colonIdx == -1 {
-		return ""
-	}
-
-	return domainPort[:colonIdx]
-}
-
 // Extracts the root domain from a full domain name.
 // Example: sub.google.com -> google.com
 func getRootDomain(domain string) string {
@@ -145,11 +120,6 @@ func getRootDomain(domain string) string {
 		return parts[len(parts)-2] + "." + parts[len(parts)-1]
 	}
 	return domain
-}
-
-// Checks if the given string is an IP address.
-func isIPAddress(domain string) bool {
-	return net.ParseIP(domain) != nil
 }
 
 // Extracts the outbound name from [inbound -> outbound] format.
@@ -186,6 +156,20 @@ func (p *Parser) trimToTopN() {
 	p.metrics.DomainCounts = keepTopN(p.metrics.DomainCounts, MaxTrackedDomains)
 	p.metrics.IPCounts = keepTopN(p.metrics.IPCounts, MaxTrackedIPs)
 	p.metrics.OutboundCounts = keepTopN(p.metrics.OutboundCounts, MaxTrackedOutbounds)
+}
+
+// Emergency cleanup if maps grow too large between regular cleanups
+func (p *Parser) checkEmergencyCleanup() {
+	p.metrics.mu.RLock()
+	needCleanup := len(p.metrics.DomainCounts) > MaxDomainsBeforeCleanup ||
+		len(p.metrics.IPCounts) > MaxIPsBeforeCleanup ||
+		len(p.metrics.OutboundCounts) > MaxOutboundsBeforeCleanup
+	p.metrics.mu.RUnlock()
+
+	if needCleanup {
+		logrus.Debug("Emergency cleanup triggered - too many domains/IPs")
+		p.trimToTopN()
+	}
 }
 
 // Keeps only the top N entries by count from a map
@@ -251,6 +235,9 @@ func NewParser(config Config) (*Parser, error) {
 		ctx:    ctx,
 		cancel: cancel,
 	}
+
+	// Immediate cleanup on startup to ensure clean state
+	parser.trimToTopN()
 
 	return parser, nil
 }
@@ -346,10 +333,10 @@ func (p *Parser) GetOutboundCounts() map[string]int64 {
 
 // Continuously monitors the log file for changes and processes new entries.
 // Runs every 5 seconds to balance responsiveness with system overhead.
-// Also performs periodic cardinality cleanup every 5 minutes.
+// Also performs periodic cardinality cleanup every 30 seconds for aggressive control.
 func (p *Parser) parseLoop() {
 	ticker := time.NewTicker(5 * time.Second)
-	cleanupTicker := time.NewTicker(5 * time.Minute)
+	cleanupTicker := time.NewTicker(30 * time.Second) // More frequent cleanup
 	defer ticker.Stop()
 	defer cleanupTicker.Stop()
 
@@ -363,6 +350,8 @@ func (p *Parser) parseLoop() {
 			if err := p.parseLogFile(); err != nil {
 				logrus.WithError(err).Warn("Failed to parse log file")
 			}
+			// Check for emergency cleanup after processing logs
+			p.checkEmergencyCleanup()
 		}
 	}
 }
