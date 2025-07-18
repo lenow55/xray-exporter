@@ -9,11 +9,19 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/sirupsen/logrus"
+)
+
+// Cardinality limits to prevent excessive metric series
+const (
+	MaxTrackedDomains   = 100 // Keep only top 100 domains
+	MaxTrackedIPs       = 100 // Keep only top 100 IPs
+	MaxTrackedOutbounds = 10  // Keep only top 10 outbounds
 )
 
 // Represents a parsed line from the Xray access log.
@@ -164,6 +172,48 @@ func (p *Parser) addConnectionTimestamp(ts time.Time) {
 	}
 }
 
+// Helper struct for sorting map entries by count
+type countEntry struct {
+	key   string
+	count int64
+}
+
+// Trims maps to keep only top N entries by count to control cardinality
+func (p *Parser) trimToTopN() {
+	p.metrics.mu.Lock()
+	defer p.metrics.mu.Unlock()
+
+	p.metrics.DomainCounts = keepTopN(p.metrics.DomainCounts, MaxTrackedDomains)
+	p.metrics.IPCounts = keepTopN(p.metrics.IPCounts, MaxTrackedIPs)
+	p.metrics.OutboundCounts = keepTopN(p.metrics.OutboundCounts, MaxTrackedOutbounds)
+}
+
+// Keeps only the top N entries by count from a map
+func keepTopN(counts map[string]int64, n int) map[string]int64 {
+	if len(counts) <= n {
+		return counts
+	}
+
+	// Convert to slice for sorting
+	entries := make([]countEntry, 0, len(counts))
+	for key, count := range counts {
+		entries = append(entries, countEntry{key: key, count: count})
+	}
+
+	// Sort by count (descending)
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].count > entries[j].count
+	})
+
+	// Keep only top N
+	result := make(map[string]int64, n)
+	for i := 0; i < n && i < len(entries); i++ {
+		result[entries[i].key] = entries[i].count
+	}
+
+	return result
+}
+
 // Creates a new log parser with automatic buffer sizing based on time window.
 func NewParser(config Config) (*Parser, error) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -296,14 +346,19 @@ func (p *Parser) GetOutboundCounts() map[string]int64 {
 
 // Continuously monitors the log file for changes and processes new entries.
 // Runs every 5 seconds to balance responsiveness with system overhead.
+// Also performs periodic cardinality cleanup every 5 minutes.
 func (p *Parser) parseLoop() {
 	ticker := time.NewTicker(5 * time.Second)
+	cleanupTicker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
+	defer cleanupTicker.Stop()
 
 	for {
 		select {
 		case <-p.ctx.Done():
 			return
+		case <-cleanupTicker.C:
+			p.trimToTopN()
 		case <-ticker.C:
 			if err := p.parseLogFile(); err != nil {
 				logrus.WithError(err).Warn("Failed to parse log file")
