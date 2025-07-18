@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -314,21 +315,65 @@ func (e *Exporter) collectDomainMetrics(ch chan<- prometheus.Metric) {
 		nil,
 	)
 
+	// Only export top 20 domains to prevent cardinality leak
+	domainEntries := make([]struct {
+		key   string
+		count int64
+	}, 0, len(domainCounts))
 	for domain, count := range domainCounts {
+		domainEntries = append(domainEntries, struct {
+			key   string
+			count int64
+		}{domain, count})
+	}
+
+	// Sort by count (descending) and take only top 20
+	sort.Slice(domainEntries, func(i, j int) bool {
+		return domainEntries[i].count > domainEntries[j].count
+	})
+
+	maxDomains := 20
+	if len(domainEntries) < maxDomains {
+		maxDomains = len(domainEntries)
+	}
+
+	for i := 0; i < maxDomains; i++ {
 		ch <- prometheus.MustNewConstMetric(
 			metricDesc,
 			prometheus.CounterValue,
-			float64(count),
-			domain,
+			float64(domainEntries[i].count),
+			domainEntries[i].key,
 		)
 	}
 
+	// Only export top 20 IPs to prevent cardinality leak
+	ipEntries := make([]struct {
+		key   string
+		count int64
+	}, 0, len(ipCounts))
 	for ip, count := range ipCounts {
+		ipEntries = append(ipEntries, struct {
+			key   string
+			count int64
+		}{ip, count})
+	}
+
+	// Sort by count (descending) and take only top 20
+	sort.Slice(ipEntries, func(i, j int) bool {
+		return ipEntries[i].count > ipEntries[j].count
+	})
+
+	maxIPs := 20
+	if len(ipEntries) < maxIPs {
+		maxIPs = len(ipEntries)
+	}
+
+	for i := 0; i < maxIPs; i++ {
 		ch <- prometheus.MustNewConstMetric(
 			metricDesc,
 			prometheus.CounterValue,
-			float64(count),
-			ip,
+			float64(ipEntries[i].count),
+			ipEntries[i].key,
 		)
 	}
 }
@@ -348,12 +393,34 @@ func (e *Exporter) collectOutboundMetrics(ch chan<- prometheus.Metric) {
 		nil,
 	)
 
+	// Only export top 10 outbounds to prevent cardinality leak
+	outboundEntries := make([]struct {
+		key   string
+		count int64
+	}, 0, len(outboundCounts))
 	for outbound, count := range outboundCounts {
+		outboundEntries = append(outboundEntries, struct {
+			key   string
+			count int64
+		}{outbound, count})
+	}
+
+	// Sort by count (descending) and take only top 10
+	sort.Slice(outboundEntries, func(i, j int) bool {
+		return outboundEntries[i].count > outboundEntries[j].count
+	})
+
+	maxOutbounds := 10
+	if len(outboundEntries) < maxOutbounds {
+		maxOutbounds = len(outboundEntries)
+	}
+
+	for i := 0; i < maxOutbounds; i++ {
 		ch <- prometheus.MustNewConstMetric(
 			metricDesc,
 			prometheus.CounterValue,
-			float64(count),
-			outbound,
+			float64(outboundEntries[i].count),
+			outboundEntries[i].key,
 		)
 	}
 }
