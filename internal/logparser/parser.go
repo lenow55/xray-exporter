@@ -209,13 +209,13 @@ func NewParser(config Config) (*Parser, error) {
 	var bufferCap int
 	switch {
 	case minutes <= 5:
-		bufferCap = 10000 // Short windows: 10K entries (~240KB)
-	case minutes <= 15:
-		bufferCap = 25000 // Medium windows: 25K entries (~600KB)
-	case minutes <= 60:
-		bufferCap = 50000 // Long windows: 50K entries (~1.2MB)
+		bufferCap = 50000 // Short windows: 50K entries (~1.2MB)
+	case minutes <= 10:
+		bufferCap = 100000 // Medium windows: 100K entries (~2.4MB)
+	case minutes <= 30:
+		bufferCap = 200000 // Long windows: 200K entries (~4.8MB)
 	default:
-		bufferCap = 100000 // Very long windows: 100K entries (~2.4MB)
+		bufferCap = 500000 // Very long windows: 500K entries (~12MB)
 	}
 
 	parser := &Parser{
