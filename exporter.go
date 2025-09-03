@@ -22,7 +22,7 @@ import (
 )
 
 // Default time window for user activity metrics (in minutes)
-const DefaultLogTimeWindowMinutes = 3
+const DefaultLogTimeWindowMinutes = 5
 
 // Collects Xray metrics and exposes them in Prometheus format.
 // Connects to Xray's gRPC API for runtime stats and optionally parses
