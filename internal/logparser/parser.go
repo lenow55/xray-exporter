@@ -21,18 +21,16 @@ import (
 
 // Cardinality limits to prevent excessive metric series
 const (
-	MaxTrackedDomains   = 50 // Keep only top 50 domains for pie chart
+	MaxTrackedDomains   = 20 // Keep only top 20 domains for pie chart
 	MaxTrackedIPs       = 20 // Keep only top 20 IPs for pie chart
-	MaxTrackedSubnets   = 50 // Keep only top 50 /24 subnets
 	MaxTrackedOutbounds = 10 // Keep only top 10 outbounds
-	MaxTrackedASNs      = 50 // Keep only top 50 ASNs
-	MaxTrackedCountries = 50 // Keep only top 50 countries
-	MaxTrackedCities    = 50 // Keep only top 50 cities
+	MaxTrackedASNs      = 20 // Keep only top 20 ASNs
+	MaxTrackedCountries = 20 // Keep only top 20 countries
+	MaxTrackedCities    = 20 // Keep only top 20 cities
 
 	// Emergency cleanup thresholds to prevent unlimited growth
 	MaxDomainsBeforeCleanup   = 100 // Force cleanup if domains exceed this (small buffer)
 	MaxIPsBeforeCleanup       = 40  // Force cleanup if IPs exceed this (small buffer)
-	MaxSubnetsBeforeCleanup   = 100 // Force cleanup if subnets exceed this
 	MaxOutboundsBeforeCleanup = 20  // Force cleanup if outbounds exceed this
 	MaxASNsBeforeCleanup      = 100
 	MaxCountriesBeforeCleanup = 100
@@ -53,9 +51,8 @@ type MetricsData struct {
 	UniqueIPs      map[string]time.Time // IP -> last seen time
 	DomainCounts   map[string]int64     // domain -> total request count
 	IPCounts       map[string]int64     // direct IP requests -> total count
-	Subnet24Counts map[string]int64     // /24 subnet -> total request count
 	OutboundCounts map[string]int64     // outbound -> total request count
-	ASNCounts      map[string]int64     // ASN -> total request count (labels: asn, org)
+	ASNCounts      map[string]int64     // ASN -> total request count (key: asn|org)
 	CountryCounts  map[string]int64     // country -> total request count (labels: country)
 	CityCounts     map[string]int64     // city -> total request count (labels: city, country)
 
@@ -178,7 +175,6 @@ func (p *Parser) trimToTopN() {
 
 	p.metrics.DomainCounts = keepTopN(p.metrics.DomainCounts, MaxTrackedDomains)
 	p.metrics.IPCounts = keepTopN(p.metrics.IPCounts, MaxTrackedIPs)
-	p.metrics.Subnet24Counts = keepTopN(p.metrics.Subnet24Counts, MaxTrackedSubnets)
 	p.metrics.OutboundCounts = keepTopN(p.metrics.OutboundCounts, MaxTrackedOutbounds)
 	p.metrics.ASNCounts = keepTopN(p.metrics.ASNCounts, MaxTrackedASNs)
 	p.metrics.CountryCounts = keepTopN(p.metrics.CountryCounts, MaxTrackedCountries)
@@ -190,7 +186,6 @@ func (p *Parser) checkEmergencyCleanup() {
 	p.metrics.mu.RLock()
 	needCleanup := len(p.metrics.DomainCounts) > MaxDomainsBeforeCleanup ||
 		len(p.metrics.IPCounts) > MaxIPsBeforeCleanup ||
-		len(p.metrics.Subnet24Counts) > MaxSubnetsBeforeCleanup ||
 		len(p.metrics.OutboundCounts) > MaxOutboundsBeforeCleanup ||
 		len(p.metrics.ASNCounts) > MaxASNsBeforeCleanup ||
 		len(p.metrics.CountryCounts) > MaxCountriesBeforeCleanup ||
@@ -260,7 +255,6 @@ func NewParser(config Config) (*Parser, error) {
 			UniqueIPs:            make(map[string]time.Time),
 			DomainCounts:         make(map[string]int64),
 			IPCounts:             make(map[string]int64),
-			Subnet24Counts:       make(map[string]int64),
 			OutboundCounts:       make(map[string]int64),
 			ASNCounts:            make(map[string]int64),
 			CountryCounts:        make(map[string]int64),
@@ -343,8 +337,7 @@ func (p *Parser) GetDomainCounts() map[string]int64 {
 	return result
 }
 
-// Returns a copy of current IP request counts.
-// These are cumulative counters since parser startup.
+// Returns a copy of current direct IP request counts.
 func (p *Parser) GetIPCounts() map[string]int64 {
 	p.metrics.mu.RLock()
 	defer p.metrics.mu.RUnlock()
@@ -352,18 +345,6 @@ func (p *Parser) GetIPCounts() map[string]int64 {
 	result := make(map[string]int64, len(p.metrics.IPCounts))
 	for ip, count := range p.metrics.IPCounts {
 		result[ip] = count
-	}
-	return result
-}
-
-// Returns a copy of current subnet request counts.
-func (p *Parser) GetSubnet24Counts() map[string]int64 {
-	p.metrics.mu.RLock()
-	defer p.metrics.mu.RUnlock()
-
-	result := make(map[string]int64, len(p.metrics.Subnet24Counts))
-	for subnet, count := range p.metrics.Subnet24Counts {
-		result[subnet] = count
 	}
 	return result
 }
@@ -545,44 +526,51 @@ func (p *Parser) parseLogFile() error {
 		// Track unique IPs with last seen time
 		p.metrics.UniqueIPs[entry.IP] = entry.Timestamp
 
-		// Track /24 subnet counts
+		// Extract context for detailed tracking
 		subnet := getSubnet24(entry.ParsedIP)
-		if subnet != "" {
-			p.metrics.Subnet24Counts[subnet]++
-		}
+		countryCode := "unknown"
+		cityName := "unknown"
+		asn := "unknown"
+		org := "unknown"
 
-		// Track ASN, Country, and City if readers are available
-		if p.asnReader != nil {
-			if record, err := p.asnReader.ASN(entry.ParsedIP); err == nil {
-				asnKey := fmt.Sprintf("%d|%s", record.AutonomousSystemNumber, record.AutonomousSystemOrganization)
-				p.metrics.ASNCounts[asnKey]++
-			}
-		}
-
-		// Use City reader for both City and Country if available
+		// Detailed GeoIP lookups
 		if p.cityReader != nil {
 			if record, err := p.cityReader.City(entry.ParsedIP); err == nil {
-				countryCode := record.Country.IsoCode
-				if countryCode == "" {
-					countryCode = "unknown"
+				if record.Country.IsoCode != "" {
+					countryCode = record.Country.IsoCode
 				}
-				p.metrics.CountryCounts[countryCode]++
-
-				cityName := record.City.Names["en"]
-				if cityName != "" {
-					cityKey := fmt.Sprintf("%s|%s", cityName, countryCode)
-					p.metrics.CityCounts[cityKey]++
+				if name, ok := record.City.Names["en"]; ok && name != "" {
+					cityName = name
 				}
 			}
 		} else if p.countryReader != nil {
-			// Fallback to Country reader if City is not available
 			if record, err := p.countryReader.Country(entry.ParsedIP); err == nil {
-				countryCode := record.Country.IsoCode
-				if countryCode != "" {
-					p.metrics.CountryCounts[countryCode]++
+				if record.Country.IsoCode != "" {
+					countryCode = record.Country.IsoCode
 				}
 			}
 		}
+
+		if p.asnReader != nil {
+			if record, err := p.asnReader.ASN(entry.ParsedIP); err == nil {
+				asn = fmt.Sprintf("%d", record.AutonomousSystemNumber)
+				org = record.AutonomousSystemOrganization
+			}
+		}
+
+		// Update aggregated metrics
+		if countryCode != "unknown" {
+			p.metrics.CountryCounts[countryCode]++
+		}
+		if cityName != "unknown" {
+			cityKey := fmt.Sprintf("%s|%s", cityName, countryCode)
+			p.metrics.CityCounts[cityKey]++
+		}
+
+		// Update Detailed ASN tracking (consolidated metric)
+		// Key format: asn|org
+		asnKey := fmt.Sprintf("%s|%s", asn, org)
+		p.metrics.ASNCounts[asnKey]++
 	}
 
 	// Update file position for next read

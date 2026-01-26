@@ -281,10 +281,9 @@ To learn more about Prometheus, please visit the [official docs](https://prometh
 | `xray_total_connections` | Total number of connections in the time window | - |
 | `xray_requested_domain_ip_total` | Total requests per domain or IP address | `target` |
 | `xray_outbound_requests_total` | Total requests per outbound connection | `outbound` |
-| `xray_top_asns_total` | Total requests per ASN | `asn`, `org` |
-| `xray_top_countries_total` | Total requests per country | `country` |
-| `xray_top_cities_total` | Total requests per city | `city`, `country` |
-| `xray_client_subnet_total` | Requests per client /24 (IPv4) or /48 (IPv6) subnet | `subnet`, `asn`, `org`, `country`, `city` |
+| `xray_asns_total` | Total requests per ASN | `asn`, `org` |
+| `xray_countries_total` | Total requests per country | `country` |
+| `xray_cities_total` | Total requests per city | `city`, `country` |
 
 ### Core Metrics
 
@@ -298,9 +297,9 @@ To learn more about Prometheus, please visit the [official docs](https://prometh
 
 Use these queries to visualize the new GeoIP metrics:
 
-- **Top 10 ASNs**: `topk(10, sum by (asn, org) (increase(xray_top_asns_total[$__range])))`
-- **Top 10 Countries**: `topk(10, sum by (country) (increase(xray_top_countries_total[$__range])))`
-- **Top 10 Cities**: `topk(10, sum by (city, country) (increase(xray_top_cities_total[$__range])))`
+- **Top 10 ASNs**: `topk(10, sum by (asn, org) (increase(xray_asns_total[$__range])))`
+- **Top 10 Countries**: `topk(10, sum by (country) (increase(xray_countries_total[$__range])))`
+- **Top 10 Cities**: `topk(10, sum by (city, country) (increase(xray_cities_total[$__range])))`
 
 ## Performance & Scalability
 

@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"sort"
 	"strings"
@@ -88,19 +87,15 @@ func NewExporterWithLogConfig(endpoint string, scrapeTimeout time.Duration, logP
 		// User activity metrics from log parsing
 		"unique_users":      {txt: "Number of unique users in time window"},
 		"total_connections": {txt: "Total number of connections in time window"},
-		"client_subnet_total": {
-			txt:  "Total number of requests per client /24 subnet (IPv4) or /48 (IPv6)",
-			lbls: []string{"subnet", "asn", "org", "country", "city"},
-		},
-		"top_asns_total": {
+		"asns_total": {
 			txt:  "Total number of requests per ASN",
 			lbls: []string{"asn", "org"},
 		},
-		"top_countries_total": {
+		"countries_total": {
 			txt:  "Total number of requests per country",
 			lbls: []string{"country"},
 		},
-		"top_cities_total": {
+		"cities_total": {
 			txt:  "Total number of requests per city",
 			lbls: []string{"city", "country"},
 		},
@@ -186,7 +181,6 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	// Collect log-based metrics
 	e.collectLogMetrics(ch)
 	e.collectDomainMetrics(ch)
-	e.collectSubnetMetrics(ch)
 	e.collectOutboundMetrics(ch)
 	e.collectASNMetrics(ch)
 	e.collectCountryMetrics(ch)
@@ -379,12 +373,12 @@ func (e *Exporter) collectDomainMetrics(ch chan<- prometheus.Metric) {
 		}{domain, count})
 	}
 
-	// Sort by count (descending) and take only top 20
+	// Sort by count (descending) and take only top N
 	sort.Slice(domainEntries, func(i, j int) bool {
 		return domainEntries[i].count > domainEntries[j].count
 	})
 
-	maxDomains := 20
+	maxDomains := logparser.MaxTrackedDomains
 	if len(domainEntries) < maxDomains {
 		maxDomains = len(domainEntries)
 	}
@@ -398,7 +392,7 @@ func (e *Exporter) collectDomainMetrics(ch chan<- prometheus.Metric) {
 		)
 	}
 
-	// Only export top 20 IPs to prevent cardinality leak
+	// Only export top IPs to prevent cardinality leak
 	ipEntries := make([]struct {
 		key   string
 		count int64
@@ -410,12 +404,12 @@ func (e *Exporter) collectDomainMetrics(ch chan<- prometheus.Metric) {
 		}{ip, count})
 	}
 
-	// Sort by count (descending) and take only top 20
+	// Sort by count (descending) and take only top N
 	sort.Slice(ipEntries, func(i, j int) bool {
 		return ipEntries[i].count > ipEntries[j].count
 	})
 
-	maxIPs := 20
+	maxIPs := logparser.MaxTrackedIPs
 	if len(ipEntries) < maxIPs {
 		maxIPs = len(ipEntries)
 	}
@@ -427,72 +421,6 @@ func (e *Exporter) collectDomainMetrics(ch chan<- prometheus.Metric) {
 			float64(ipEntries[i].count),
 			ipEntries[i].key,
 		)
-	}
-}
-
-// Collects client subnet statistics from log parser.
-func (e *Exporter) collectSubnetMetrics(ch chan<- prometheus.Metric) {
-	if e.logParser == nil {
-		return
-	}
-
-	subnetCounts := e.logParser.GetSubnet24Counts()
-
-	// Only export top 50 subnets to prevent cardinality leak
-	subnetEntries := make([]struct {
-		key   string
-		count int64
-	}, 0, len(subnetCounts))
-	for subnet, count := range subnetCounts {
-		subnetEntries = append(subnetEntries, struct {
-			key   string
-			count int64
-		}{subnet, count})
-	}
-
-	// Sort by count (descending) and take only top 50
-	sort.Slice(subnetEntries, func(i, j int) bool {
-		return subnetEntries[i].count > subnetEntries[j].count
-	})
-
-	maxSubnets := 50
-	if len(subnetEntries) < maxSubnets {
-		maxSubnets = len(subnetEntries)
-	}
-
-	for i := 0; i < maxSubnets; i++ {
-		subnet := subnetEntries[i].key
-		asn := "unknown"
-		org := "unknown"
-		country := "unknown"
-		city := "unknown"
-
-		// Perform GeoIP lookups
-		// Extract IP from subnet (e.g. "1.2.3.0/24" -> "1.2.3.0")
-		ipStr := strings.Split(subnet, "/")[0]
-		ip := net.ParseIP(ipStr)
-		if ip != nil {
-			// ASN Lookup
-			if e.geoipASNReader != nil {
-				if record, err := e.geoipASNReader.ASN(ip); err == nil {
-					asn = fmt.Sprintf("%d", record.AutonomousSystemNumber)
-					org = record.AutonomousSystemOrganization
-				}
-			}
-			// City/Country Lookup
-			if e.geoipCityReader != nil {
-				if record, err := e.geoipCityReader.City(ip); err == nil {
-					if record.Country.IsoCode != "" {
-						country = record.Country.IsoCode
-					}
-					if name, ok := record.City.Names["en"]; ok && name != "" {
-						city = name
-					}
-				}
-			}
-		}
-
-		e.registerConstMetricCounter(ch, "client_subnet_total", float64(subnetEntries[i].count), subnet, asn, org, country, city)
 	}
 }
 
@@ -523,12 +451,12 @@ func (e *Exporter) collectOutboundMetrics(ch chan<- prometheus.Metric) {
 		}{outbound, count})
 	}
 
-	// Sort by count (descending) and take only top 10
+	// Sort by count (descending) and take only top N
 	sort.Slice(outboundEntries, func(i, j int) bool {
 		return outboundEntries[i].count > outboundEntries[j].count
 	})
 
-	maxOutbounds := 10
+	maxOutbounds := logparser.MaxTrackedOutbounds
 	if len(outboundEntries) < maxOutbounds {
 		maxOutbounds = len(outboundEntries)
 	}
@@ -565,7 +493,7 @@ func (e *Exporter) collectASNMetrics(ch chan<- prometheus.Metric) {
 		return asnEntries[i].count > asnEntries[j].count
 	})
 
-	maxASNs := 20
+	maxASNs := logparser.MaxTrackedASNs
 	if len(asnEntries) < maxASNs {
 		maxASNs = len(asnEntries)
 	}
@@ -574,10 +502,12 @@ func (e *Exporter) collectASNMetrics(ch chan<- prometheus.Metric) {
 		parts := strings.Split(asnEntries[i].key, "|")
 		asn := parts[0]
 		org := ""
+
 		if len(parts) > 1 {
 			org = parts[1]
 		}
-		e.registerConstMetricCounter(ch, "top_asns_total", float64(asnEntries[i].count), asn, org)
+
+		e.registerConstMetricCounter(ch, "asns_total", float64(asnEntries[i].count), asn, org)
 	}
 }
 
@@ -603,13 +533,13 @@ func (e *Exporter) collectCountryMetrics(ch chan<- prometheus.Metric) {
 		return countryEntries[i].count > countryEntries[j].count
 	})
 
-	maxCountries := 20
+	maxCountries := logparser.MaxTrackedCountries
 	if len(countryEntries) < maxCountries {
 		maxCountries = len(countryEntries)
 	}
 
 	for i := 0; i < maxCountries; i++ {
-		e.registerConstMetricCounter(ch, "top_countries_total", float64(countryEntries[i].count), countryEntries[i].key)
+		e.registerConstMetricCounter(ch, "countries_total", float64(countryEntries[i].count), countryEntries[i].key)
 	}
 }
 
@@ -635,7 +565,7 @@ func (e *Exporter) collectCityMetrics(ch chan<- prometheus.Metric) {
 		return cityEntries[i].count > cityEntries[j].count
 	})
 
-	maxCities := 20
+	maxCities := logparser.MaxTrackedCities
 	if len(cityEntries) < maxCities {
 		maxCities = len(cityEntries)
 	}
@@ -647,7 +577,7 @@ func (e *Exporter) collectCityMetrics(ch chan<- prometheus.Metric) {
 		if len(parts) > 1 {
 			country = parts[1]
 		}
-		e.registerConstMetricCounter(ch, "top_cities_total", float64(cityEntries[i].count), city, country)
+		e.registerConstMetricCounter(ch, "cities_total", float64(cityEntries[i].count), city, country)
 	}
 }
 
