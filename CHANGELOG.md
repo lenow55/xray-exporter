@@ -1,6 +1,6 @@
 # Changelog
 
-## [3.0.0] - 2026-05-01
+## [0.3.0] - 2026-05-01
 
 ### Changed
 
@@ -8,7 +8,7 @@
 
   The following metrics now include `dimension="user"` with `target` set to the user's email/name as configured in 3x-ui or Xray:
 
-  ```
+  ```promql
   xray_traffic_uplink_bytes_total{dimension="user", target="alice-phone"}
   xray_traffic_downlink_bytes_total{dimension="user", target="alice-phone"}
   ```
