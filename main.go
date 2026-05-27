@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings" // Добавлен пакет strings для работы с префиксами
 	"syscall"
 	"time"
 
@@ -22,7 +23,7 @@ import (
 var opts struct {
 	Listen                 string `short:"l" long:"listen" description:"Listen address" value-name:"[ADDR]:PORT" default:":9550"`
 	MetricsPath            string `short:"m" long:"metrics-path" description:"Metrics path" value-name:"PATH" default:"/scrape"`
-	XRayEndpoint           string `short:"e" long:"xray-endpoint" description:"Xray API endpoint" value-name:"HOST:PORT" default:"127.0.0.1:8080"`
+	XRayEndpoint           string `short:"e" long:"xray-endpoint" description:"Xray API endpoint (IP:PORT, /path/to/socket, or @abstract_socket)" value-name:"ENDPOINT" default:"127.0.0.1:8080"`
 	ScrapeTimeoutInSeconds int64  `short:"t" long:"scrape-timeout" description:"The timeout in seconds for every individual scrape" value-name:"N" default:"5"`
 	LogPath                string `short:"p" long:"log-path" description:"Path to Xray access log file (empty to disable user metrics)" value-name:"PATH" default:"/var/log/xray/access.log"`
 	LogTimeWindowMinutes   int    `short:"w" long:"log-time-window" description:"Time window in minutes for user metrics" value-name:"N"`
@@ -71,6 +72,25 @@ func main() {
 		logrus.WithError(err).Fatal("Failed to initialize GeoIP database")
 	}
 
+	// УМНЫЙ ПАРСИНГ АДРЕСА XRAY ENDPOINT
+	// gRPC требует префикс "unix://" для работы с сокетами
+	endpoint := opts.XRayEndpoint
+	if strings.HasPrefix(endpoint, "@") {
+		// Абстрактный Unix-сокет (Linux) — используется в Remnawave
+		endpoint = "unix://" + endpoint
+		logrus.Infof("Detected abstract Unix socket, converting gRPC target to: %s", endpoint)
+	} else if strings.HasPrefix(endpoint, "/") {
+		// Классический файловый Unix-сокет
+		endpoint = "unix://" + endpoint
+		logrus.Infof("Detected standard Unix socket, converting gRPC target to: %s", endpoint)
+	} else if strings.HasPrefix(endpoint, "unix://") {
+		// Если пользователь сам передал правильный префикс
+		logrus.Infof("Using explicitly provided Unix socket target: %s", endpoint)
+	} else {
+		// Обычный TCP (IP:PORT)
+		logrus.Infof("Using TCP target for gRPC: %s", endpoint)
+	}
+
 	// Initialize exporter with configuration
 	scrapeTimeout := time.Duration(opts.ScrapeTimeoutInSeconds) * time.Second
 
@@ -80,7 +100,9 @@ func main() {
 		timeWindowMinutes = DefaultLogTimeWindowMinutes
 	}
 	logTimeWindow := time.Duration(timeWindowMinutes) * time.Minute
-	exporter, err := NewExporterWithLogConfig(opts.XRayEndpoint, scrapeTimeout, opts.LogPath, logTimeWindow)
+
+	// Передаем наш обработанный `endpoint` вместо `opts.XRayEndpoint`
+	exporter, err := NewExporterWithLogConfig(endpoint, scrapeTimeout, opts.LogPath, logTimeWindow)
 	if err != nil {
 		logrus.WithError(err).Fatal("Failed to create exporter")
 	}
