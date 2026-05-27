@@ -5,18 +5,19 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath" // Необходимо для работы с путями
 	"time"
 
 	"github.com/sirupsen/logrus"
 )
 
 const (
-	ASNUrl     = "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-ASN.mmdb"
-	CityUrl    = "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-City.mmdb"
-	CountryUrl = "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-Country.mmdb"
-	ASNPath    = "GeoLite2-ASN.mmdb"
-	CityPath   = "GeoLite2-City.mmdb"
-	CountryPath = "GeoLite2-Country.mmdb"
+	ASNUrl      = "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-ASN.mmdb"
+	CityUrl     = "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-City.mmdb"
+	CountryUrl  = "https://github.com/P3TERX/GeoLite.mmdb/releases/latest/download/GeoLite2-Country.mmdb"
+	ASNPath     = "geo/GeoLite2-ASN.mmdb"
+	CityPath    = "geo/GeoLite2-City.mmdb"
+	CountryPath = "geo/GeoLite2-Country.mmdb"
 )
 
 // DownloadDB downloads the latest GeoLite2 databases with retries.
@@ -49,15 +50,21 @@ func downloadWithRetry(name, url, path string) error {
 	return fmt.Errorf("failed to download GeoLite2-%s database after %d attempts: %w", name, maxRetries, lastErr)
 }
 
-func downloadFile(filepath string, url string) error {
-	// Create the file
-	out, err := os.Create(filepath)
+func downloadFile(path string, url string) error {
+	// 1. Извлекаем директорию из полного пути и создаем её, если её нет
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		return err
+	}
+
+	// 2. Теперь безопасно создаем файл
+	out, err := os.Create(path)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
 
-	// Get the data
+	// 3. Получаем данные по сети
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -71,7 +78,7 @@ func downloadFile(filepath string, url string) error {
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	// Write the body to file
+	// 4. Записываем тело ответа в файл
 	_, err = io.Copy(out, resp.Body)
 	return err
 }
