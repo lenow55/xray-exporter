@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath" // Необходимо для работы с путями
+	"path/filepath"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -32,6 +32,12 @@ func DownloadDB() error {
 }
 
 func downloadWithRetry(name, url, path string) error {
+	// Проверяем, существует ли файл и убеждаемся, что он не пустой (защита от битых загрузок)
+	if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+		logrus.Infof("GeoLite2-%s database already exists at %s, skipping download", name, path)
+		return nil
+	}
+
 	maxRetries := 3
 	var lastErr error
 
