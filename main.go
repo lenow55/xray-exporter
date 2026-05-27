@@ -73,17 +73,18 @@ func main() {
 	}
 
 	// УМНЫЙ ПАРСИНГ АДРЕСА XRAY ENDPOINT
-	// gRPC требует префикс "unix://" для работы с сокетами
+	// gRPC требует правильного формата URI.
+	// Для сокетов используем префикс "unix:" (без двойных слешей!)
 	endpoint := opts.XRayEndpoint
 	if strings.HasPrefix(endpoint, "@") {
-		// Абстрактный Unix-сокет (Linux) — используется в Remnawave
-		endpoint = "unix://" + endpoint
+		// Абстрактный Unix-сокет
+		endpoint = "unix:" + endpoint
 		logrus.Infof("Detected abstract Unix socket, converting gRPC target to: %s", endpoint)
 	} else if strings.HasPrefix(endpoint, "/") {
 		// Классический файловый Unix-сокет
-		endpoint = "unix://" + endpoint
+		endpoint = "unix:" + endpoint
 		logrus.Infof("Detected standard Unix socket, converting gRPC target to: %s", endpoint)
-	} else if strings.HasPrefix(endpoint, "unix://") {
+	} else if strings.HasPrefix(endpoint, "unix://") || strings.HasPrefix(endpoint, "unix:") {
 		// Если пользователь сам передал правильный префикс
 		logrus.Infof("Using explicitly provided Unix socket target: %s", endpoint)
 	} else {
