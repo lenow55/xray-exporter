@@ -241,6 +241,12 @@ func (e *Exporter) scrapeXrayMetrics(ctx context.Context, ch chan<- prometheus.M
 		// Parse format: inbound>>>socks-proxy>>>traffic>>>uplink
 		p := strings.Split(s.GetName(), ">>>")
 
+		// Skip per-user traffic metrics to control cardinality
+		// This prevents creating thousands of series for individual users
+		if p[0] == "user" {
+			continue
+		}
+
 		metric := p[2] + "_" + p[3] + "_bytes_total"
 		dimension := p[0]
 		target := p[1]
